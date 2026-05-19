@@ -1,81 +1,82 @@
 'use client'
-// import {
-//   // useEffect,
-//   useState
-// } from "react"
-// import { VideoCard } from "../video/video-cards"
-// import { Skeleton } from "../ui/skeleton"
-// import { ScrollArea } from "../ui/scroll-area"
+import {
+  useEffect,
+  useState
+} from "react"
+import { VideoCard } from "../video/video-cards"
+import { Skeleton } from "../ui/skeleton"
 import { NoVideos } from "./no-videos"
-// import { MagnetForm } from "../magnet-form/magnet-form"
-// import { Card, CardContent, CardHeader, CardTitle } from "../ui/card"
 
-// interface Video {
-//   id: string
-//   magnet_link: string
-//   status: "processing" | "downloading" | "downloaded" | "failed"
-//   file_path: string | null
-//   deleted: boolean
-// }
-
-export const Library = () => {
-  // const [videos, _setVideos] = useState<Video[]>([])
-  // const [loading, _setLoading] = useState(true)
-
-  // useEffect(() => {
-  //   const fetchVideos = async () => {
-  //     try {
-  //       const res = await fetch(
-  //         `${process.env.NEXT_PUBLIC_BACKEND_URL}/videos`,
-  //         {
-  //           method: "GET",
-  //         }
-  //       )
-
-  //       if (!res.ok) throw new Error("Failed to fetch videos")
-
-  //       const data = await res.json()
-  //       setVideos(data)
-  //     } catch (err) {
-  //       console.error("Error fetching videos:", err)
-  //     } finally {
-  //       setLoading(false)
-  //     }
-  //   }
-
-  //   fetchVideos()
-  // }, [])
-
-  return <div className="flex justify-center">
-    <div className="flex md:flex-row flex-col gap-2">
-      {/* {!loading ? (
-        <>
-          <Skeleton className="md:h-[300px] h-[250px] md:w-[300px]" />
-        </>
-      ) : videos && videos.length > 0 ? (
-        <ScrollArea className="h-[470px] w-full">
-          <div className="flex flex-row w-full gap-2">
-            {
-              videos.map((v) => (
-                <div key={v.id}>
-                  <VideoCard
-                    key={v.id}
-                    processing={v.status !== "downloaded"}
-                    videoId={v.id}
-                    title={v.file_path?.split('/').pop() || v.id}
-                    duration={100}
-                    view_progress={0}
-                  />
-                </div>
-              ))
-            }
-          </div>
-        </ScrollArea>
-      )
-        : ( */}
-      {/* )} */}
-      <NoVideos />
-    </div>
-  </div>
+interface Video {
+  id: string
+  magnet_link: string
+  status: "processing" | "downloading" | "downloaded" | "failed"
+  file_path: string | null
+  deleted: boolean
 }
 
+export const Library = () => {
+  const [videos, setVideos] = useState<Video[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const backendURL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080"
+
+  useEffect(() => {
+    const fetchVideos = async () => {
+      try {
+        const res = await fetch(
+          `${backendURL}/videos`,
+          {
+            method: "GET",
+          }
+        )
+
+        if (!res.ok) throw new Error("Failed to fetch videos")
+
+        const data = await res.json()
+        setVideos(data)
+      } catch (err) {
+        console.error("Error fetching videos:", err)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchVideos()
+  }, [backendURL])
+
+  if (loading) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {[1, 2, 3, 4].map((i) => (
+          <Skeleton key={i} className="aspect-video w-full rounded-xl" />
+        ))}
+      </div>
+    )
+  }
+
+  if (videos.length === 0) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <NoVideos />
+      </div>
+    )
+  }
+
+  return (
+    <div className="w-full animate-in fade-in duration-500">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {videos.map((v) => (
+          <VideoCard
+            key={v.id}
+            processing={v.status !== "downloaded"}
+            videoId={v.id}
+            title={v.file_path?.split('/').pop() || v.id}
+            duration={0}
+            view_progress={0}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}

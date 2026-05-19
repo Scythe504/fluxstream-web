@@ -42,7 +42,7 @@ export const MagnetForm = () => {
       setMagnet("")
 
       // client-side navigation (no reload)
-      router.push(`/video/${encodeURIComponent(videoId)}`)
+      router.push(`/library/${encodeURIComponent(videoId)}`)
     } catch (err) {
       console.error(err)
       setError("Something went wrong. Please try again.")

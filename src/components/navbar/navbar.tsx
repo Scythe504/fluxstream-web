@@ -1,8 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import Link from "next/link"
 import { ThemeToggle } from "@/components/theme/theme-toggle"
+import { SidebarInset, SidebarTrigger } from "@/components/ui/sidebar"
+import { Separator } from "@/components/ui/separator"
 
 export function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false)
@@ -14,27 +15,14 @@ export function Navbar() {
   }, [])
 
   return (
-    <>
-      <nav
-        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${isScrolled ? "bg-zinc-950/40 backdrop-blur-md" : "bg-transparent"
-          }`}
-      >
-        <div className="mx-auto px-2 max-w-5xl">
-          <div className="flex items-center justify-between h-16">
-            {/* Logo */}
-            <Link href="/" className="flex items-center gap-2 group">
-              <span className="text-xl  font-bold group-hover:text-primary transition-colors dark:text-white">
-                Fluxstream
-              </span>
-            </Link>
-
-            {/* Right side */}
-            <div className="flex items-center gap-3">
-              <ThemeToggle />
-            </div>
-          </div>
-        </div>
-      </nav>
-    </>
+    <header className={`flex h-16 shrink-0 items-center justify-between px-4 transition-all duration-300 sticky top-0 z-30 ${
+      isScrolled ? "bg-background/80 border-b backdrop-blur-md" : "bg-transparent"
+    }`}>
+      <div className="flex items-center gap-2">
+        <SidebarTrigger className="-ml-1" />
+        <Separator orientation="vertical" className="mr-2 h-4" />
+      </div>
+      <ThemeToggle />
+    </header>
   )
 }

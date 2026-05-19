@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 export const HeroSection = () => {
   const router = useRouter()
   const routeToMagnetLinkForm = () => {
-    router.push("/video")
+    router.push("/library")
   }
 
   return <div className="relative min-h-screen overflow-hidden">

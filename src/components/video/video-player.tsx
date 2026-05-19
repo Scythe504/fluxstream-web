@@ -211,19 +211,19 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
         onClick={() => videoContainerRef.current?.focus()}
       >
         {isLoading && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900 z-10 rounded-lg">
-            <Loader2 className="h-12 w-12 animate-spin text-zinc-400" />
-            <span className="mt-4 text-zinc-400 font-medium">Loading video...</span>
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/80 z-10 rounded-lg backdrop-blur-sm">
+            <Loader2 className="h-12 w-12 animate-spin text-primary" />
+            <span className="mt-4 text-muted-foreground font-medium">Loading video...</span>
           </div>
         )}
 
         {error && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900 z-10 p-6 rounded-lg">
-            <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center mb-4">
-              <span className="text-red-500 text-2xl font-bold">!</span>
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/90 z-10 p-6 rounded-lg backdrop-blur-sm">
+            <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+              <span className="text-destructive text-2xl font-bold">!</span>
             </div>
-            <h3 className="text-red-500 font-semibold text-lg mb-2">Error Loading Video</h3>
-            <p className="text-zinc-400 text-center max-w-md">{error}</p>
+            <h3 className="text-destructive font-semibold text-lg mb-2">Error Loading Video</h3>
+            <p className="text-muted-foreground text-center max-w-md">{error}</p>
           </div>
         )}
 
@@ -246,7 +246,7 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
         {/* Controls overlay */}
         <div
           className={cn(
-            "absolute inset-0 flex flex-col justify-between bg-linear-to-t from-zinc-950/80 via-transparent to-zinc-950/40 transition-opacity duration-300 rounded-lg",
+            "absolute inset-0 flex flex-col justify-between bg-gradient-to-t from-black/80 via-transparent to-black/40 transition-opacity duration-300 rounded-lg",
             showControls ? "opacity-100" : "opacity-0",
             (isLoading || error) && "hidden"
           )}

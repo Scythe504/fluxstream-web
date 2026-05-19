@@ -1,15 +1,19 @@
 'use client'
 import { useCallback, useEffect, useState } from "react"
 import VideoPlayer, { VideoMetadata } from "./video-player"
+import { TorrentStats } from "./torrent-stats"
 import { toast } from "sonner"
 import { formatFileSize } from "@/lib/utils"
-import { Download } from "lucide-react"
+import { Download, ChevronRight, ChevronLeft, Info, ArrowLeft } from "lucide-react"
 import { Button } from "../ui/button"
+import { cn } from "@/lib/utils"
+import Link from "next/link"
 
 export const VideoPage = ({ videoId }: {
   videoId: string
 }) => {
   const [metadata, setMetadata] = useState<VideoMetadata>()
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true)
 
   const backendURL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080"
 
@@ -51,53 +55,113 @@ export const VideoPage = ({ videoId }: {
     toast("Coming Soon!", {
       description: "The download feature will come soon, for now just stream torrents as you go!"
     })
-
-    // const body = {
-    //   video_id: videoId
-    // }
-
-    // fetch(`${backendURL}/videos/${videoId}/save`, {
-    //   method: "POST",
-    //   body: JSON.stringify(body),
-    // }).then(res => {
-    //   if (!res.ok) {
-    //     throw new Error(`error occured while saving video ${res}`)
-    //   }
-
-    //   res.json().then(val => {
-    //     toast("Download started" as string, {
-    //       description: val.message
-    //     })
-    //   })
-    // }).catch((err) => {
-    //   toast("Download couldnt start", {
-    //     description: "Some error occured check the logs from \"fluxstream start\" command"
-    //   })
-    //   console.error(err)
-    // })
   }, [])
 
-  return <main className="flex min-h-screen sm:flex-row flex-col items-center md:p-8 gap-2">
-    <div className="w-full max-w-5xl mx-auto py-10 px-2 space-y-2">
-      {
-        videoId && metadata && <>
-          <div className="mt-2 w-full flex justify-between gap-2">
-            <h1 className="sm:text-xl truncate md:whitespace-normal font-semibold">
-              {metadata.name}
-            </h1>
-            <Button
-              variant={"outline"}
+  return (
+    <main className="min-h-screen bg-background text-foreground pt-4 pb-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {videoId && metadata && (
+          <div className="space-y-4">
+            {/* Breadcrumbs/Back button */}
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+               <Link href="/library" className="hover:text-primary flex items-center gap-1 transition-colors">
+                  <ArrowLeft className="w-4 h-4" />
+                  Back to Library
+               </Link>
+            </div>
 
-              onClick={handleDownload}
-            >
-              <Download />{metadata.length !== 0 ? formatFileSize(metadata.length) : "-"}
-            </Button >
+            <div className="flex flex-col lg:flex-row gap-6 relative">
+              {/* Main Content: Video and Title */}
+              <div className="flex-1 space-y-4 min-w-0">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground line-clamp-2 leading-tight">
+                    {metadata.name}
+                  </h1>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleDownload}
+                      className="shrink-0 h-9 rounded-xl border-border bg-card"
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      {metadata.length !== 0 ? formatFileSize(metadata.length) : "-"}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                      className="lg:flex hidden h-9 w-9 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted"
+                    >
+                      {isSidebarOpen ? <ChevronRight /> : <ChevronLeft />}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl overflow-hidden shadow-2xl border border-border bg-black aspect-video ring-1 ring-border/50 relative group">
+                  <VideoPlayer 
+                    videoId={videoId} 
+                    videoUrl={`${backendURL}/videos/${videoId}/stream`} 
+                    metadata={metadata} 
+                  />
+                </div>
+
+                {/* Mobile Stats Toggle/Section */}
+                <div className="lg:hidden block space-y-4">
+                   <TorrentStats videoId={videoId} />
+                   
+                   <div className="p-4 rounded-2xl border border-border bg-card shadow-sm">
+                      <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <Info className="h-3.5 w-3.5" />
+                        Media Information
+                      </h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-muted-foreground uppercase font-bold">Format</span>
+                          <p className="text-sm font-medium text-foreground uppercase">{metadata.extension.replace('.', '')}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-muted-foreground uppercase font-bold">Total Size</span>
+                          <p className="text-sm font-medium text-foreground">{formatFileSize(metadata.length)}</p>
+                        </div>
+                      </div>
+                   </div>
+                </div>
+              </div>
+
+              {/* Sidebar: Stats */}
+              <div className={cn(
+                "lg:w-80 shrink-0 space-y-4 transition-all duration-300 lg:block hidden",
+                !isSidebarOpen && "lg:w-0 lg:opacity-0 lg:pointer-events-none lg:overflow-hidden"
+              )}>
+                <TorrentStats videoId={videoId} />
+                
+                <div className="p-5 rounded-2xl border border-border bg-card shadow-sm">
+                  <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <Info className="h-3.5 w-3.5" />
+                    Media Information
+                  </h3>
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center py-1">
+                      <span className="text-sm text-muted-foreground">Extension</span>
+                      <span className="text-sm font-bold text-foreground uppercase bg-muted px-2 py-0.5 rounded-md">{metadata.extension.replace('.', '')}</span>
+                    </div>
+                    <div className="flex justify-between items-center py-1">
+                      <span className="text-sm text-muted-foreground">Total Size</span>
+                      <span className="text-sm font-bold text-foreground">{formatFileSize(metadata.length)}</span>
+                    </div>
+                    <div className="pt-2 border-t border-border/50">
+                       <p className="text-[10px] text-muted-foreground leading-relaxed italic">
+                          File is being streamed and cached locally while you watch.
+                       </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="rounded-xl overflow-hidden shadow-2xl border">
-            <VideoPlayer videoId={videoId} videoUrl={`${backendURL}/videos/${videoId}/stream`} metadata={metadata} />
-          </div>
-        </>
-      }
-    </div>
-  </main>
+        )}
+      </div>
+    </main>
+  )
 }
