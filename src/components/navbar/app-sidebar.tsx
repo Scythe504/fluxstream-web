@@ -111,7 +111,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                         Paste a magnet link to start streaming instantly.
                       </DialogDescription>
                     </DialogHeader>
-                    <MagnetForm />
+                    <MagnetForm onSuccess={() => setOpen(false)} />
                   </DialogContent>
                 </Dialog>
               </SidebarMenuItem>

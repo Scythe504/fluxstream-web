@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 
-export const MagnetForm = () => {
+interface MagnetFormProps {
+  onSuccess?: () => void
+}
+
+export const MagnetForm = ({ onSuccess }: MagnetFormProps) => {
   const [magnet, setMagnet] = React.useState("")
   const [error, setError] = React.useState<string | null>(null)
   const [submitting, setSubmitting] = React.useState(false)
@@ -41,6 +45,10 @@ export const MagnetForm = () => {
       // reset state before redirect
       setSubmitting(false)
       setMagnet("")
+
+      if (onSuccess) {
+        onSuccess()
+      }
 
       // client-side navigation (no reload)
       router.push(`/library/${encodeURIComponent(videoId)}`)

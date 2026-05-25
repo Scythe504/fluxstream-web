@@ -87,7 +87,7 @@ export const Header = () => {
                 </DialogDescription>
               </DialogHeader>
 
-              <MagnetForm />
+              <MagnetForm onSuccess={() => setOpen(false)} />
             </DialogContent>
           </Dialog>
         </div>
