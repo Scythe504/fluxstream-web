@@ -20,10 +20,11 @@ export const MagnetForm = () => {
       return
     }
 
+    const backendURL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080"
     setSubmitting(true)
 
     try {
-      const resp = await fetch("http://localhost:8080/videos", {
+      const resp = await fetch(`${backendURL}/videos`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ magnet_link: magnet }),

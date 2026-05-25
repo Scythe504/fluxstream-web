@@ -21,6 +21,10 @@ export const Library = () => {
 
   const backendURL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080"
 
+  const handleDelete = (deletedId: string) => {
+    setVideos((prev) => prev.filter((v) => v.id !== deletedId))
+  }
+
   useEffect(() => {
     const fetchVideos = async () => {
       try {
@@ -74,6 +78,7 @@ export const Library = () => {
             title={v.file_path?.split('/').pop() || v.id}
             duration={0}
             view_progress={0}
+            onDelete={handleDelete}
           />
         ))}
       </div>

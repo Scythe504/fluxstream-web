@@ -247,7 +247,7 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
         <div
           className={cn(
             "absolute inset-0 flex flex-col justify-between bg-gradient-to-t from-black/80 via-transparent to-black/40 transition-opacity duration-300 rounded-lg",
-            showControls ? "opacity-100" : "opacity-0",
+            showControls ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
             (isLoading || error) && "hidden"
           )}
           onClick={(e) => e.stopPropagation()}
@@ -269,8 +269,8 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
             <div className="flex-1 h-full" onDoubleClick={skipForward} />
           </div>
 
-          <div className="sm:p-4 p-1 space-y-2 absolute bottom-0 right-0 left-0">
-            <div className="flex items-center gap-2 pl-3">
+          <div className="sm:p-4 p-2.5 space-y-2 absolute bottom-0 right-0 left-0">
+            <div className="flex items-center gap-2 px-2">
               <span className="text-xs text-zinc-300 font-medium min-w-6 select-none">{formatTime(currentTime)}</span>
               <Slider
                 value={[currentTime]}
@@ -290,7 +290,7 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="hover:bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 active:ring-0 active:ring-offset-0 focus:outline-none"
+                  className="h-10 w-10 sm:h-9 sm:w-9 hover:bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 active:ring-0 active:ring-offset-0 focus:outline-none"
                   onClick={togglePlay}
                 >
                   {isPlaying
@@ -301,7 +301,7 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="hover:bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 active:ring-0 active:ring-offset-0 focus:outline-none"
+                  className="h-10 w-10 sm:h-9 sm:w-9 hover:bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 active:ring-0 active:ring-offset-0 focus:outline-none"
                   onClick={skipBackward}
                 >
                   <SkipBack className="fill-white stroke-white" />
@@ -310,13 +310,13 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="hover:bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 active:ring-0 active:ring-offset-0 focus:outline-none"
+                  className="h-10 w-10 sm:h-9 sm:w-9 hover:bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 active:ring-0 active:ring-offset-0 focus:outline-none"
                   onClick={skipForward}
                 >
                   <SkipForward className="fill-white stroke-white" />
                 </Button>
 
-                <div className="flex items-center gap-1 group relative">
+                <div className="sm:flex hidden items-center gap-1 group relative">
                   <Button
                     size="icon"
                     variant="ghost"
@@ -344,7 +344,7 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="hover:bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 active:ring-0 active:ring-offset-0 focus:outline-none"
+                  className="h-10 w-10 sm:h-9 sm:w-9 hover:bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 active:ring-0 active:ring-offset-0 focus:outline-none"
                   onClick={toggleFullscreen}
                 >
                   {isFullscreen ? <Minimize className="fill-white stroke-white"/> : <Maximize className="fill-white stroke-white" />}
