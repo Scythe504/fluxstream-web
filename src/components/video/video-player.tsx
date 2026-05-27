@@ -3,11 +3,18 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import {
   Loader2, Play, Pause, Volume2, VolumeX, Maximize, Minimize,
-  SkipBack, SkipForward
+  SkipBack, SkipForward, Subtitles, FastForward, Rewind
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Slider } from "@/components/ui/slider"
 import { Button } from "../ui/button"
+
+
+interface ParsedCue {
+  startTime: number;
+  endTime: number;
+  text: string;
+}
 
 interface VideoPlayerProps {
   videoId: string;
@@ -27,17 +34,43 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
+  const [subSize, setSubSize] = useState<"sm" | "md" | "lg" | "xl">("md")
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+
+  // Load subtitle settings from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedSize = localStorage.getItem("fluxstream_sub_size") as "sm" | "md" | "lg" | "xl"
+      if (savedSize) setSubSize(savedSize)
+    }
+  }, [])
+
+  const handleSubSizeChange = (val: string) => {
+    const size = val as "sm" | "md" | "lg" | "xl"
+    setSubSize(size)
+    localStorage.setItem("fluxstream_sub_size", size)
+  }
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [volume, setVolume] = useState(1)
   const [isMuted, setIsMuted] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [subtitlesEnabled, setSubtitlesEnabled] = useState(true)
+  const [subtitlesVersion, setSubtitlesVersion] = useState(0)
+  const [parsedCues, setParsedCues] = useState<ParsedCue[]>([])
+  const [isBuffering, setIsBuffering] = useState(false)
+  const [bufferedEnd, setBufferedEnd] = useState(0)
   const [showControls, setShowControls] = useState(true)
-  const [isHovering, setIsHovering] = useState(false)
+  const [skipFeedback, setSkipFeedback] = useState<{ show: boolean; text: string; direction: "forward" | "backward" | null }>({
+    show: false,
+    text: "",
+    direction: null,
+  })
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const videoContainerRef = useRef<HTMLDivElement>(null)
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const skipTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
     const fetchVideo = async () => {
@@ -54,6 +87,40 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
     fetchVideo()
   }, [videoUrl])
 
+  // Fetch subtitles in JS whenever the version, URL, or enabled state changes
+  useEffect(() => {
+    if (!subtitlesEnabled) {
+      setParsedCues([])
+      return
+    }
+
+    const fetchSubs = async () => {
+      try {
+        const url = `${videoUrl.replace("/stream", "/subs")}?v=${subtitlesVersion}`
+        const response = await fetch(url)
+        if (!response.ok) throw new Error("Failed to load subtitles")
+        const text = await response.text()
+        const cues = parseVttText(text)
+        setParsedCues(cues)
+      } catch (err) {
+        console.error("Error loading subtitles:", err)
+      }
+    }
+
+    fetchSubs()
+  }, [videoUrl, subtitlesEnabled, subtitlesVersion])
+
+  // Periodically refresh subtitle track as the torrent downloads more data
+  useEffect(() => {
+    if (!isPlaying) return
+
+    const interval = setInterval(() => {
+      setSubtitlesVersion(v => v + 1)
+    }, 15000) // every 15 seconds
+
+    return () => clearInterval(interval)
+  }, [isPlaying])
+
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
@@ -61,15 +128,51 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
     const handleTimeUpdate = () => setCurrentTime(video.currentTime)
     const handleDurationChange = () => setDuration(video.duration)
     const handleEnded = () => setIsPlaying(false)
+    const handleWaiting = () => setIsBuffering(true)
+    const handlePlaying = () => {
+      setIsBuffering(false)
+      setSubtitlesVersion(v => v + 1)
+    }
+    const handleSeeking = () => setIsBuffering(true)
+    const handleSeeked = () => {
+      setIsBuffering(false)
+      setSubtitlesVersion(v => v + 1)
+    }
+    const handleProgress = () => {
+      const buffered = video.buffered
+      if (buffered.length > 0) {
+        let maxBuffered = 0
+        for (let i = 0; i < buffered.length; i++) {
+          if (buffered.start(i) <= video.currentTime && buffered.end(i) >= video.currentTime) {
+            maxBuffered = buffered.end(i)
+            break
+          }
+        }
+        if (maxBuffered === 0 && buffered.length > 0) {
+          maxBuffered = buffered.end(buffered.length - 1)
+        }
+        setBufferedEnd(maxBuffered)
+      }
+    }
 
     video.addEventListener("timeupdate", handleTimeUpdate)
     video.addEventListener("durationchange", handleDurationChange)
     video.addEventListener("ended", handleEnded)
+    video.addEventListener("waiting", handleWaiting)
+    video.addEventListener("playing", handlePlaying)
+    video.addEventListener("seeking", handleSeeking)
+    video.addEventListener("seeked", handleSeeked)
+    video.addEventListener("progress", handleProgress)
 
     return () => {
       video.removeEventListener("timeupdate", handleTimeUpdate)
       video.removeEventListener("durationchange", handleDurationChange)
       video.removeEventListener("ended", handleEnded)
+      video.removeEventListener("waiting", handleWaiting)
+      video.removeEventListener("playing", handlePlaying)
+      video.removeEventListener("seeking", handleSeeking)
+      video.removeEventListener("seeked", handleSeeked)
+      video.removeEventListener("progress", handleProgress)
     }
   }, [])
 
@@ -80,26 +183,81 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
   }, [])
 
   useEffect(() => {
-    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current)
-    if (isHovering || !isPlaying) {
+    const container = videoContainerRef.current
+    if (!container) return
+
+    const handleMouseMove = () => {
       setShowControls(true)
-    } else {
-      controlsTimeoutRef.current = setTimeout(() => {
-        if (!isHovering && isPlaying) setShowControls(false)
-      }, 2000)
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current)
+      }
+      if (isPlaying && !isDropdownOpen) {
+        controlsTimeoutRef.current = setTimeout(() => {
+          setShowControls(false)
+        }, 2000)
+      }
     }
+
+    const handleMouseLeave = () => {
+      if (isPlaying && !isDropdownOpen) {
+        setShowControls(false)
+      }
+    }
+
+    container.addEventListener("mousemove", handleMouseMove)
+    container.addEventListener("mouseleave", handleMouseLeave)
+
+    if (isPlaying && !isDropdownOpen) {
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current)
+      controlsTimeoutRef.current = setTimeout(() => {
+        setShowControls(false)
+      }, 2000)
+    } else {
+      setShowControls(true)
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current)
+      }
+    }
+
     return () => {
+      container.removeEventListener("mousemove", handleMouseMove)
+      container.removeEventListener("mouseleave", handleMouseLeave)
       if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current)
     }
-  }, [isHovering, isPlaying])
+  }, [isPlaying, isDropdownOpen])
 
   const togglePlay = useCallback(() => {
+    if (isDropdownOpen) {
+      setIsDropdownOpen(false)
+      return
+    }
     const video = videoRef.current
     if (!video) return
     if (isPlaying) video.pause()
     else video.play()
     setIsPlaying(!isPlaying)
-  }, [isPlaying])
+  }, [isPlaying, isDropdownOpen])
+
+  const toggleSubtitles = useCallback(() => {
+    const video = videoRef.current
+    if (!video) return
+    const tracks = video.textTracks
+    if (tracks && tracks.length > 0) {
+      const track = tracks[0]
+      const nextState = track.mode !== "hidden"
+      track.mode = nextState ? "hidden" : "disabled"
+      setSubtitlesEnabled(nextState)
+      if (nextState) {
+        setSubtitlesVersion(v => v + 1)
+      }
+    } else {
+      const nextState = !subtitlesEnabled
+      setSubtitlesEnabled(nextState)
+      if (nextState) {
+        setSubtitlesVersion(v => v + 1)
+      }
+    }
+  }, [subtitlesEnabled])
 
   const handleSeek = (value: number[]) => {
     const video = videoRef.current
@@ -132,21 +290,51 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
   const toggleFullscreen = useCallback(() => {
     const container = videoContainerRef.current
     if (!container) return
-    if (!document.fullscreenElement) container.requestFullscreen().catch(console.error)
-    else document.exitFullscreen()
+    
+    if (!document.fullscreenElement) {
+      container.requestFullscreen()
+        .then(() => {
+          const orientation = window.screen && window.screen.orientation;
+          if (orientation && typeof (orientation as unknown as { lock: (type: string) => Promise<void> }).lock === "function") {
+            (orientation as unknown as { lock: (type: string) => Promise<void> }).lock("landscape").catch((err: unknown) => {
+              console.warn("Screen orientation lock ignored/unsupported on this device:", err)
+            })
+          }
+        })
+        .catch(console.error)
+    } else {
+      document.exitFullscreen()
+        .then(() => {
+          const orientation = window.screen && window.screen.orientation;
+          if (orientation && typeof (orientation as unknown as { unlock: () => void }).unlock === "function") {
+            (orientation as unknown as { unlock: () => void }).unlock()
+          }
+        })
+        .catch(console.error)
+    }
   }, [])
 
-  const skipForward = () => {
+  const triggerSkipFeedback = useCallback((text: string, direction: "forward" | "backward") => {
+    if (skipTimeoutRef.current) clearTimeout(skipTimeoutRef.current)
+    setSkipFeedback({ show: true, text, direction })
+    skipTimeoutRef.current = setTimeout(() => {
+      setSkipFeedback({ show: false, text: "", direction: null })
+    }, 600)
+  }, [])
+
+  const skipForward = useCallback(() => {
     const video = videoRef.current
     if (!video) return
     video.currentTime = Math.min(video.currentTime + 10, video.duration)
-  }
+    triggerSkipFeedback("+10s", "forward")
+  }, [triggerSkipFeedback])
 
-  const skipBackward = () => {
+  const skipBackward = useCallback(() => {
     const video = videoRef.current
     if (!video) return
     video.currentTime = Math.max(video.currentTime - 10, 0)
-  }
+    triggerSkipFeedback("-10s", "backward")
+  }, [triggerSkipFeedback])
 
   const formatTime = (timeInSeconds: number) => {
     const minutes = Math.floor(timeInSeconds / 60)
@@ -170,10 +358,12 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
         case "ArrowRight":
           video.currentTime = Math.min(video.currentTime + 5, video.duration)
           setCurrentTime(video.currentTime)
+          triggerSkipFeedback("+5s", "forward")
           break
         case "ArrowLeft":
           video.currentTime = Math.max(video.currentTime - 5, 0)
           setCurrentTime(video.currentTime)
+          triggerSkipFeedback("-5s", "backward")
           break
         case "ArrowUp":
           e.preventDefault()
@@ -198,88 +388,194 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
 
     container.addEventListener("keydown", handleKeyDown)
     return () => container.removeEventListener("keydown", handleKeyDown)
-  }, [togglePlay, volume, toggleFullscreen])
+  }, [togglePlay, volume, toggleFullscreen, triggerSkipFeedback])
+
+  const activeCues = parsedCues.filter(
+    cue => currentTime >= cue.startTime && currentTime <= cue.endTime
+  )
 
   return (
-    <div className="w-full space-y-4">
+    <div className="w-full h-full">
       <div
         ref={videoContainerRef}
         tabIndex={0}
-        className="relative w-full focus:outline-0 overflow-hidden bg-zinc-950 flex items-center justify-center rounded-lg"
-        onMouseEnter={() => setIsHovering(true)}
-        onMouseLeave={() => setIsHovering(false)}
+        className={cn(
+          "relative w-full h-full focus:outline-0 overflow-hidden bg-black flex items-center justify-center transition-all",
+          isFullscreen ? "rounded-none" : "rounded-lg",
+          !showControls && "cursor-none"
+        )}
         onClick={() => videoContainerRef.current?.focus()}
       >
         {isLoading && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/80 z-10 rounded-lg backdrop-blur-sm">
-            <Loader2 className="h-12 w-12 animate-spin text-primary" />
-            <span className="mt-4 text-muted-foreground font-medium">Loading video...</span>
+          <div className={cn(
+            "absolute inset-0 flex flex-col items-center justify-center bg-black/80 z-10 backdrop-blur-sm transition-all",
+            isFullscreen ? "rounded-none" : "rounded-lg"
+          )}>
+            <Loader2 className="h-12 w-12 animate-spin text-white" />
+            <span className="mt-4 text-zinc-400 font-medium">Loading video...</span>
+          </div>
+        )}
+
+        {isBuffering && isPlaying && !isLoading && !error && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/10 z-10 pointer-events-none">
+            <div className="rounded-full md:h-18 md:w-18 h-12 w-12 flex items-center justify-center bg-zinc-900/80 border border-white/10 z-20 shadow-2xl backdrop-blur-md">
+              <Loader2 className="md:size-8 size-5 animate-spin text-white" />
+            </div>
           </div>
         )}
 
         {error && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/90 z-10 p-6 rounded-lg backdrop-blur-sm">
-            <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+          <div className={cn(
+            "absolute inset-0 flex flex-col items-center justify-center bg-black/90 z-10 p-6 backdrop-blur-sm transition-all",
+            isFullscreen ? "rounded-none" : "rounded-lg"
+          )}>
+            <div className="w-16 h-16 rounded-full bg-zinc-900 flex items-center justify-center mb-4 border border-destructive/30">
               <span className="text-destructive text-2xl font-bold">!</span>
             </div>
             <h3 className="text-destructive font-semibold text-lg mb-2">Error Loading Video</h3>
-            <p className="text-muted-foreground text-center max-w-md">{error}</p>
+            <p className="text-zinc-400 text-center max-w-md">{error}</p>
+          </div>
+        )}
+        {/* Skip Feedback Overlay */}
+        {skipFeedback.show && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
+            <div className="animate-in fade-in zoom-in-90 duration-200 bg-black/70 backdrop-blur-md rounded-full w-24 h-24 flex flex-col items-center justify-center gap-1 shadow-2xl border border-white/10">
+              {skipFeedback.direction === "forward" ? (
+                <FastForward className="h-6 w-6 text-white fill-white" />
+              ) : (
+                <Rewind className="h-6 w-6 text-white fill-white" />
+              )}
+              <span className="text-white text-sm font-bold tracking-wider">
+                {skipFeedback.text}
+              </span>
+            </div>
           </div>
         )}
 
         <video
           ref={videoRef}
           className={cn(
-            "w-full cursor-pointer aspect-video rounded-lg",
-            isLoading || error ? "opacity-0" : "opacity-100"
+            "w-full h-full object-contain transition-all",
+            isFullscreen ? "rounded-none" : "rounded-lg",
+            isLoading || error ? "opacity-0" : "opacity-100",
+            showControls ? "cursor-pointer" : "cursor-none"
           )}
+          crossOrigin="anonymous"
           onClick={togglePlay}
+          onDoubleClick={toggleFullscreen}
           onLoadedData={() => setDuration(videoRef.current?.duration || 0)}
           onError={() => setError("Failed to load video.")}
-          onPlay={() => setIsPlaying(true)}
-          onPause={() => setIsPlaying(false)}
+          onPlay={() => {
+            setIsPlaying(true)
+            setSubtitlesVersion(v => v + 1)
+          }}
+          onPause={() => {
+            setIsPlaying(false)
+            setSubtitlesVersion(v => v + 1)
+          }}
         >
           <source src={videoUrl} />
           Your browser does not support the video tag.
         </video>
 
+        {/* Custom Subtitles Overlay */}
+        {subtitlesEnabled && activeCues.length > 0 && (
+          <div 
+            className={cn(
+              "absolute left-1/2 -translate-x-1/2 w-full max-w-[85%] flex flex-col items-center justify-end pointer-events-none z-10 gap-2 mb-2 select-none transition-all duration-200", 
+              showControls ? "bottom-[18%]" : "bottom-[8%]"
+            )}
+          >
+            {[...activeCues]
+              .sort((a, b) => b.startTime - a.startTime)
+              .filter(cue => (cue.text || "").trim() !== "")
+              .map((cue, idx) => {
+                const text = cue.text || ""
+                const startTime = cue.startTime || 0
+                
+                // Font family configuration inline styling (system sans-serif for optimal performance and legibility)
+                const fontStyle = { fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" }
+
+                // Font size configuration
+                const baseSize = {
+                  sm: isFullscreen ? "min(2.0vw, 20px)" : "min(3.5vw, 14px)",
+                  md: isFullscreen ? "min(2.8vw, 26px)" : "min(4.5vw, 18px)",
+                  lg: isFullscreen ? "min(3.6vw, 32px)" : "min(5.5vw, 24px)",
+                  xl: isFullscreen ? "min(4.4vw, 40px)" : "min(6.5vw, 30px)"
+                }[subSize]
+
+                return (
+                  <div
+                    key={`${startTime}-${idx}`}
+                    className="subtitle-cue text-center font-bold text-white tracking-wide select-none leading-normal transition-all [text-shadow:_-1.5px_-1.5px_0_#000,_1.5px_-1.5px_0_#000,_-1.5px_1.5px_0_#000,_1.5px_1.5px_0_#000,_0_1.5px_3px_rgba(0,0,0,0.8)]"
+                    style={{
+                      fontSize: baseSize,
+                      ...fontStyle
+                    }}
+                    dangerouslySetInnerHTML={{ __html: parseVttToHtml(text) }}
+                  />
+                )
+              })}
+          </div>
+        )}
+
         {/* Controls overlay */}
         <div
           className={cn(
-            "absolute inset-0 flex flex-col justify-between bg-gradient-to-t from-black/80 via-transparent to-black/40 transition-opacity duration-300 rounded-lg",
+            "absolute inset-0 flex flex-col justify-between bg-gradient-to-t from-black/80 via-transparent to-black/40 transition-opacity duration-300",
+            isFullscreen ? "rounded-none" : "rounded-lg",
             showControls ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
             (isLoading || error) && "hidden"
           )}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="absolute inset-0 flex w-full">
-            <div className="flex-1 h-full" onDoubleClick={skipBackward} />
-            {!isPlaying && (
-              <div className="flex items-center justify-center">
-                <Button
-                  size="icon"
-                  variant="secondary"
-                  className="rounded-full md:h-18 md:w-18 h-12 w-12 z-20 focus-visible:ring-offset-0 active:ring-0 active:ring-offset-0 focus:outline-none"
-                  onClick={togglePlay}
-                >
-                  <Play className="md:size-8 size-5 fill-accent-foreground stroke-accent-foreground" />
-                </Button>
-              </div>
-            )}
-            <div className="flex-1 h-full" onDoubleClick={skipForward} />
-          </div>
+          {/* Interactive background area to capture clicks and double-clicks */}
+          <div
+            className="absolute inset-0 z-0 cursor-pointer"
+            onClick={togglePlay}
+            onDoubleClick={toggleFullscreen}
+          />
 
-          <div className="sm:p-4 p-2.5 space-y-2 absolute bottom-0 right-0 left-0">
-            <div className="flex items-center gap-2 px-2">
+          {/* Center Play Button Overlay */}
+          {!isPlaying && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+              <Button
+                size="icon"
+                className="rounded-full md:h-18 md:w-18 h-12 w-12 flex items-center justify-center bg-zinc-900/80 hover:bg-zinc-800/80 text-white border border-white/10 shadow-2xl backdrop-blur-md transition-all focus-visible:ring-offset-0 active:ring-0 active:ring-offset-0 focus:outline-none pointer-events-auto animate-in fade-in zoom-in duration-200"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  togglePlay()
+                }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation()
+                  toggleFullscreen()
+                }}
+              >
+                <Play className="md:size-8 size-5 fill-white stroke-white ml-0.5" />
+              </Button>
+            </div>
+          )}
+
+          <div className="sm:p-4 p-2.5 space-y-2 absolute bottom-0 right-0 left-0 z-20">
+            <div className="flex items-center gap-2 px-2 flex-1 relative group">
               <span className="text-xs text-zinc-300 font-medium min-w-6 select-none">{formatTime(currentTime)}</span>
-              <Slider
-                value={[currentTime]}
-                min={0}
-                max={duration || 100}
-                step={0.1}
-                onValueChange={handleSeek}
-                className="flex-1 cursor-pointer"
-              />
+              <div className="flex-1 relative flex items-center h-5">
+                {/* Custom Buffer Track background */}
+                <div className="absolute left-0 right-0 h-1.5 bg-zinc-700/60 rounded-full overflow-hidden pointer-events-none">
+                  <div 
+                    className="h-full bg-zinc-400/40 transition-all duration-300"
+                    style={{ width: `${duration > 0 ? (bufferedEnd / duration) * 100 : 0}%` }}
+                  />
+                </div>
+                <Slider
+                  value={[currentTime]}
+                  min={0}
+                  max={duration || 100}
+                  step={0.1}
+                  onValueChange={handleSeek}
+                  className="relative z-10 flex-1 cursor-pointer h-full [&_[data-slot=slider-track]]:bg-transparent"
+                />
+              </div>
               <span className="text-xs text-zinc-300 font-medium min-w-10 select-none">
                 {duration > 0 ? formatTime(duration) : "—"}
               </span>
@@ -340,7 +636,89 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 relative">
+                {isDropdownOpen && (
+                  <div 
+                    className="absolute bottom-12 right-0 w-56 bg-zinc-950/95 border border-zinc-800 text-zinc-200 rounded-xl shadow-2xl backdrop-blur-md z-30 p-3 select-none flex flex-col gap-2.5 animate-in fade-in slide-in-from-bottom-2 duration-200"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 px-1 py-0.5">
+                      Subtitle Settings
+                    </div>
+                    
+                    <div className="h-px bg-zinc-800" />
+                    
+                    {/* Subtitles Enabled Row */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        toggleSubtitles()
+                      }}
+                      className="w-full flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs text-left text-zinc-300 hover:bg-zinc-800/80 hover:text-white transition-colors cursor-pointer"
+                    >
+                      <span>Enable Subtitles</span>
+                      <span className={cn(
+                        "text-[9px] px-1.5 py-0.5 rounded font-semibold",
+                        subtitlesEnabled 
+                          ? "bg-green-500/20 text-green-400 border border-green-500/30" 
+                          : "bg-zinc-800 text-zinc-400"
+                      )}>
+                        {subtitlesEnabled ? "ON" : "OFF"}
+                      </span>
+                    </button>
+
+                    <div className="h-px bg-zinc-800" />
+
+                    {/* Font Size options */}
+                    <div className="space-y-1">
+                      <span className="text-[9px] font-semibold uppercase tracking-wider text-zinc-500 px-2">
+                        Font Size
+                      </span>
+                      <div className="grid grid-cols-4 gap-1 p-0.5 bg-zinc-900/60 rounded-lg border border-zinc-800">
+                        {(["sm", "md", "lg", "xl"] as const).map((sz) => (
+                          <button
+                            key={sz}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleSubSizeChange(sz)
+                            }}
+                            className={cn(
+                              "rounded-md py-1 text-[10px] font-medium transition-all text-center cursor-pointer uppercase",
+                              subSize === sz 
+                                ? "bg-zinc-700 text-white shadow-sm" 
+                                : "text-zinc-400 hover:text-white hover:bg-zinc-800/40"
+                            )}
+                          >
+                            {sz}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className={cn(
+                    "h-10 w-10 sm:h-9 sm:w-9 hover:bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 active:ring-0 active:ring-offset-0 focus:outline-none relative",
+                    !subtitlesEnabled && "text-zinc-500 hover:text-zinc-400",
+                    isDropdownOpen && "text-white bg-zinc-800/40"
+                  )}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setIsDropdownOpen(!isDropdownOpen)
+                  }}
+                  title="Subtitle Settings"
+                >
+                  <Subtitles className={cn(
+                    "h-5 w-5 fill-transparent stroke-white",
+                    !subtitlesEnabled && "opacity-40"
+                  )} />
+                </Button>
+
                 <Button
                   size="icon"
                   variant="ghost"
@@ -356,4 +734,118 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
       </div>
     </div>
   )
+}
+
+// Clean VTT subtitles cues to standard safe HTML
+function parseVttToHtml(vttText: string): string {
+  let html = vttText
+  
+  // Replace line breaks with <br>
+  html = html.replace(/\r?\n/g, '<br>')
+  
+  // Clean up timestamp tags if any (e.g. <00:00:01.000>)
+  // Replace with a space so adjacent words don't get glued together
+  html = html.replace(/<\d{2}:\d{2}:\d{2}\.\d{3}>/g, ' ')
+  html = html.replace(/<\d{2}:\d{2}\.\d{3}>/g, ' ')
+  
+  // Replace <i> and </i> tags
+  html = html.replace(/<i[^>]*>/gi, 'italic-start-placeholder')
+  html = html.replace(/<\/i>/gi, 'italic-end-placeholder')
+  
+  // Replace <b> and </b> tags
+  html = html.replace(/<b[^>]*>/gi, 'bold-start-placeholder')
+  html = html.replace(/<\/b>/gi, 'bold-end-placeholder')
+  
+  // Replace <u> and </u> tags
+  html = html.replace(/<u[^>]*>/gi, 'underline-start-placeholder')
+  html = html.replace(/<\/u>/gi, 'underline-end-placeholder')
+  
+  // Strip ASS override blocks like {\an8}, {\pos(100,100)}, etc. - replace with a space
+  html = html.replace(/{[^}]+}/g, ' ')
+  
+  // Strip all other HTML tags (to prevent any XSS or broken tags) - replace with a space
+  html = html.replace(/<[^>]+>/g, ' ')
+  
+  // Collapse multiple spaces into a single space
+  html = html.replace(/\s+/g, ' ')
+  
+  // Trim
+  html = html.trim()
+
+  // Replace standard spaces with non-breaking spaces so browser never collapses them
+  html = html.replace(/ /g, '&nbsp;')
+  
+  // Restore our safe tags (maintaining their standard class spaces safely)
+  html = html.replace(/italic-start-placeholder/g, '<em class="italic">')
+  html = html.replace(/italic-end-placeholder/g, '</em>')
+  html = html.replace(/bold-start-placeholder/g, '<strong class="font-bold">')
+  html = html.replace(/bold-end-placeholder/g, '</strong>')
+  html = html.replace(/underline-start-placeholder/g, '<u class="underline">')
+  html = html.replace(/underline-end-placeholder/g, '</u>')
+  
+  return html
+}
+
+function parseVttTimestamp(timestamp: string): number {
+  try {
+    const parts = timestamp.trim().split(":")
+    let hours = 0
+    let minutes = 0
+    let secondsWithMs = 0
+
+    if (parts.length === 3) {
+      hours = parseInt(parts[0], 10) || 0
+      minutes = parseInt(parts[1], 10) || 0
+      secondsWithMs = parseFloat(parts[2]) || 0
+    } else if (parts.length === 2) {
+      minutes = parseInt(parts[0], 10) || 0
+      secondsWithMs = parseFloat(parts[1]) || 0
+    } else {
+      secondsWithMs = parseFloat(parts[0]) || 0
+    }
+
+    return hours * 3600 + minutes * 60 + secondsWithMs
+  } catch (err) {
+    console.error("Error parsing timestamp:", timestamp, err)
+    return 0
+  }
+}
+
+function parseVttText(vttString: string): ParsedCue[] {
+  const lines = vttString.split(/\r?\n/)
+  const cues: ParsedCue[] = []
+  
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i].trim()
+    
+    // Check if this line is a timestamp line (contains -->)
+    if (line.includes("-->")) {
+      const parts = line.split("-->")
+      if (parts.length === 2) {
+        // Extract timestamps, ignoring any settings after space
+        const startPart = parts[0].trim().split(/\s+/)[0]
+        const endPart = parts[1].trim().split(/\s+/)[0]
+        
+        const startTime = parseVttTimestamp(startPart)
+        const endTime = parseVttTimestamp(endPart)
+        
+        // Read cue text lines until we hit an empty line or end of file
+        let text = ""
+        i++
+        while (i < lines.length && lines[i].trim() !== "") {
+          if (text) {
+            text += "\n"
+          }
+          text += lines[i]
+          i++
+        }
+        
+        cues.push({ startTime, endTime, text })
+      }
+    }
+    i++
+  }
+  
+  return cues
 }

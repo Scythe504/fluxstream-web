@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react"
 import { formatFileSize } from "@/lib/utils"
-import { Download, Upload, Users, Activity, BarChart3 } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Download, Upload, Users } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
 
 interface TorrentStats {
   bytes_completed: number
@@ -20,8 +20,6 @@ export const TorrentStats = ({ videoId }: { videoId: string }) => {
   const [stats, setStats] = useState<TorrentStats | null>(null)
   const [isConnected, setIsConnected] = useState(false)
 
-  const backendURL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080"
-
   useEffect(() => {
     let eventSource: EventSource | null = null;
     let retryTimeout: NodeJS.Timeout | null = null;
@@ -31,7 +29,7 @@ export const TorrentStats = ({ videoId }: { videoId: string }) => {
         eventSource.close();
       }
 
-      eventSource = new EventSource(`${backendURL}/torrents/${videoId}/stats/stream`)
+      eventSource = new EventSource(`/api/torrents/${videoId}/stats/stream`)
 
       eventSource.onopen = () => {
         setIsConnected(true);
@@ -66,95 +64,88 @@ export const TorrentStats = ({ videoId }: { videoId: string }) => {
       if (eventSource) eventSource.close();
       if (retryTimeout) clearTimeout(retryTimeout);
     }
-  }, [backendURL, videoId])
+  }, [videoId])
 
-  // Initial loading state
   if (!stats) {
     return (
-      <Card className="w-full bg-card border-border backdrop-blur-sm">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-            <Activity className="h-4 w-4 animate-pulse text-primary" />
-            Torrent Stats
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="h-4 w-full bg-muted animate-pulse rounded" />
-          <div className="h-4 w-3/4 bg-muted animate-pulse rounded" />
-        </CardContent>
-      </Card>
+      <div className="space-y-4 animate-pulse">
+        <div className="space-y-2">
+          <div className="flex justify-between">
+            <Skeleton className="h-3 w-16 bg-muted" />
+            <Skeleton className="h-3 w-8 bg-muted" />
+          </div>
+          <Skeleton className="h-1.5 w-full bg-muted rounded-full" />
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          <Skeleton className="h-8 w-full bg-muted rounded" />
+          <Skeleton className="h-8 w-full bg-muted rounded" />
+          <Skeleton className="h-8 w-full bg-muted rounded" />
+        </div>
+      </div>
     )
   }
 
   const progressPercent = Math.round(stats.progress * 100)
 
   return (
-    <Card className="w-full bg-card border-border backdrop-blur-sm relative overflow-hidden">
-      {!isConnected && (
-        <div className="absolute top-2 right-2">
-          <div className="h-2 w-2 rounded-full bg-yellow-500 animate-pulse" title="Reconnecting..." />
+    <div className="space-y-5">
+      {/* Progress Section */}
+      <div className="space-y-1.5">
+        <div className="flex justify-between items-center text-xs">
+          <span className="text-muted-foreground">Buffered to Disk</span>
+          {isConnected ? (
+            <span className="text-foreground font-semibold">{progressPercent}%</span>
+          ) : (
+            <div className="flex items-center gap-1 text-[10px] text-amber-500 font-semibold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 animate-pulse">
+              <span className="h-1 w-1 rounded-full bg-amber-500" />
+              Reconnecting
+            </div>
+          )}
         </div>
-      )}
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-foreground flex items-center gap-2">
-          <BarChart3 className="h-4 w-4 text-primary" />
-          Torrent Status
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        {/* Progress Section */}
-        <div className="space-y-2">
-          <div className="flex justify-between text-xs">
-            <span className="text-muted-foreground">Progress</span>
-            <span className="text-foreground font-medium">{progressPercent}%</span>
+        <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+          <div 
+            className="h-full bg-primary transition-all duration-500 ease-out"
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+        <div className="flex justify-between text-[10px] text-muted-foreground/60 font-mono">
+          <span>{formatFileSize(stats.bytes_completed)}</span>
+          <span>{formatFileSize(stats.total_bytes)}</span>
+        </div>
+      </div>
+
+      {/* Speed & Peers Section */}
+      <div className="grid grid-cols-3 gap-2.5 pt-3.5 border-t border-border/50">
+        <div className="space-y-0.5">
+          <div className="flex items-center gap-1 text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">
+            <Download className="h-3 w-3 text-green-500" />
+            <span>Down</span>
           </div>
-          <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-primary transition-all duration-500 ease-out"
-              style={{ width: `${progressPercent}%` }}
-            />
+          <p className="text-xs font-bold text-foreground">
+            {formatFileSize(stats.download_speed)}/s
+          </p>
+        </div>
+        
+        <div className="space-y-0.5">
+          <div className="flex items-center gap-1 text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">
+            <Upload className="h-3 w-3 text-blue-500" />
+            <span>Up</span>
           </div>
-          <div className="flex justify-between text-[10px] text-muted-foreground/60">
-            <span>{formatFileSize(stats.bytes_completed)}</span>
-            <span>{formatFileSize(stats.total_bytes)}</span>
-          </div>
+          <p className="text-xs font-bold text-foreground">
+            {formatFileSize(stats.upload_speed)}/s
+          </p>
         </div>
 
-        {/* Speed Section */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Download className="h-3 w-3 text-green-500" />
-              <span>Down</span>
-            </div>
-            <p className="text-sm font-semibold text-foreground">
-              {formatFileSize(stats.download_speed)}/s
-            </p>
+        <div className="space-y-0.5">
+          <div className="flex items-center gap-1 text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">
+            <Users className="h-3.5 w-3.5 text-zinc-400" />
+            <span>Peers</span>
           </div>
-          <div className="space-y-1">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Upload className="h-3 w-3 text-blue-500" />
-              <span>Up</span>
-            </div>
-            <p className="text-sm font-semibold text-foreground">
-              {formatFileSize(stats.upload_speed)}/s
-            </p>
-          </div>
+          <p className="text-xs font-bold text-foreground">
+            {stats.active_peers} <span className="text-muted-foreground/80 font-normal text-[10px]">/ {stats.total_peers}</span>
+          </p>
         </div>
-
-        {/* Peers Section */}
-        <div className="pt-2 border-t border-border/50">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Users className="h-3.5 w-3.5" />
-              <span>Active Peers</span>
-            </div>
-            <span className="text-sm font-medium text-foreground">
-              {stats.active_peers} <span className="text-muted-foreground text-xs font-normal">/ {stats.total_peers}</span>
-            </span>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }

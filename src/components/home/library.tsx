@@ -1,53 +1,20 @@
 'use client'
-import {
-  useEffect,
-  useState
-} from "react"
+import { useEffect } from "react"
 import { VideoCard } from "../video/video-cards"
 import { Skeleton } from "../ui/skeleton"
 import { NoVideos } from "./no-videos"
-
-interface Video {
-  id: string
-  magnet_link: string
-  status: "processing" | "downloading" | "downloaded" | "failed"
-  file_path: string | null
-  deleted: boolean
-}
+import { useVideos } from "@/hooks/use-videos"
 
 export const Library = () => {
-  const [videos, setVideos] = useState<Video[]>([])
-  const [loading, setLoading] = useState(true)
-
-  const backendURL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080"
+  const { videos, loading, fetchVideos, setVideos } = useVideos()
 
   const handleDelete = (deletedId: string) => {
     setVideos((prev) => prev.filter((v) => v.id !== deletedId))
   }
 
   useEffect(() => {
-    const fetchVideos = async () => {
-      try {
-        const res = await fetch(
-          `${backendURL}/videos`,
-          {
-            method: "GET",
-          }
-        )
-
-        if (!res.ok) throw new Error("Failed to fetch videos")
-
-        const data = await res.json()
-        setVideos(data)
-      } catch (err) {
-        console.error("Error fetching videos:", err)
-      } finally {
-        setLoading(false)
-      }
-    }
-
     fetchVideos()
-  }, [backendURL])
+  }, [fetchVideos])
 
   if (loading) {
     return (

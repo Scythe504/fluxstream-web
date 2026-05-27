@@ -4,6 +4,7 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { useVideos } from "@/hooks/use-videos"
 
 interface MagnetFormProps {
   onSuccess?: () => void
@@ -14,6 +15,7 @@ export const MagnetForm = ({ onSuccess }: MagnetFormProps) => {
   const [error, setError] = React.useState<string | null>(null)
   const [submitting, setSubmitting] = React.useState(false)
   const router = useRouter()
+  const { createVideo } = useVideos()
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -24,22 +26,10 @@ export const MagnetForm = ({ onSuccess }: MagnetFormProps) => {
       return
     }
 
-    const backendURL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080"
     setSubmitting(true)
 
     try {
-      const resp = await fetch(`${backendURL}/videos`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ magnet_link: magnet }),
-      })
-
-      if (!resp.ok) {
-        throw new Error("Request failed. Please try again.")
-      }
-
-      const data = await resp.json()
-      const videoId = data?.video_id
+      const videoId = await createVideo(magnet)
       if (!videoId) throw new Error("No video_id returned from server.")
 
       // reset state before redirect

@@ -1,7 +1,5 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
-  /* config options here */
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   images: {
     remotePatterns: [
       {
@@ -16,9 +14,14 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '**',
       },
+      {
+        protocol: 'https',
+        hostname: '*',
+        pathname: '**'
+      }
     ],
   },
-  output: "standalone"
+  allowedDevOrigins: ['*.ngrok.free.app'],
 };
 
 export default nextConfig;

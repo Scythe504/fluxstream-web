@@ -5,6 +5,7 @@ import { Play, Trash2 } from "lucide-react"
 import { Button } from "../ui/button"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import { useVideos } from "@/hooks/use-videos"
 
 interface VideoProps {
   videoId: string
@@ -17,6 +18,7 @@ interface VideoProps {
 
 export const VideoCard = ({ videoId, title, processing, onDelete }: VideoProps) => {
   const router = useRouter()
+  const { deleteVideo } = useVideos()
 
   const handleNavigate = () => {
     router.push(`/library/${videoId}`)
@@ -29,29 +31,9 @@ export const VideoCard = ({ videoId, title, processing, onDelete }: VideoProps) 
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation()
-    const backendURL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080"
-    const toastId = toast.loading("Deleting torrent media...")
-    
-    try {
-      const res = await fetch(`${backendURL}/torrents/${videoId}`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ delete_resource: true })
-      })
-
-      if (!res.ok) {
-        const errorText = await res.text()
-        throw new Error(errorText || "Failed to delete media")
-      }
-
-      toast.success("Torrent deleted successfully", { id: toastId })
-      if (onDelete) {
-        onDelete(videoId)
-      }
-    } catch (err) {
-      console.error("Delete error:", err)
-      const errorMessage = err instanceof Error ? err.message : "Failed to delete torrent media"
-      toast.error(errorMessage, { id: toastId })
+    const success = await deleteVideo(videoId)
+    if (success && onDelete) {
+      onDelete(videoId)
     }
   }
 

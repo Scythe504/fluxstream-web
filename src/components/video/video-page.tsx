@@ -1,6 +1,7 @@
 'use client'
 import { useCallback, useEffect, useState } from "react"
-import VideoPlayer, { VideoMetadata } from "./video-player"
+import VideoPlayer from "./video-player"
+import { useVideos } from "@/hooks/use-videos"
 import { TorrentStats } from "./torrent-stats"
 import { toast } from "sonner"
 import { formatFileSize } from "@/lib/utils"
@@ -12,43 +13,12 @@ import Link from "next/link"
 export const VideoPage = ({ videoId }: {
   videoId: string
 }) => {
-  const [metadata, setMetadata] = useState<VideoMetadata>()
+  const { metadata, fetchMetadata } = useVideos()
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
 
-  const backendURL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080"
-
   useEffect(() => {
-    const fetchMetadata = async () => {
-      try {
-        const res = await fetch(`${backendURL}/videos/${videoId}/metadata`, {
-          method: "GET",
-          headers: {
-            "Accept": "application/json",
-            "Content-Type": "application/json"
-          }
-        })
-
-        if (!res.ok) {
-          throw new Error(`VIDEO METADATA FETCH FAILED ${res}`)
-        }
-
-        const data: VideoMetadata = await res.json()
-
-        setMetadata(data)
-
-      } catch (error) {
-        setMetadata({
-          name: "Video",
-          path: "-",
-          length: 0,
-          extension: ".mkv",
-          is_video: true,
-        })
-        console.error(error)
-      }
-    }
-    fetchMetadata()
-  }, [backendURL, videoId])
+    fetchMetadata(videoId)
+  }, [videoId, fetchMetadata])
 
 
   const handleDownload = useCallback(() => {
@@ -100,7 +70,7 @@ export const VideoPage = ({ videoId }: {
               <div className="rounded-2xl overflow-hidden shadow-2xl border border-border bg-black aspect-video ring-1 ring-border/50 relative group">
                 <VideoPlayer
                   videoId={videoId}
-                  videoUrl={`${backendURL}/videos/${videoId}/stream`}
+                  videoUrl={`/api/videos/${videoId}/stream`}
                   metadata={metadata}
                 />
               </div>

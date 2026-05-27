@@ -6,7 +6,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-space-grotesk);
   --font-mono: var(--font-geist-mono);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -129,4 +129,71 @@
 
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
+}
+
+/* Premium Baked-in Anime Subtitle Styles */
+video::cue {
+  background: transparent !important;
+  color: #ffffff !important;
+  text-shadow: 
+    -1.5px -1.5px 0 #000,  
+     1.5px -1.5px 0 #000,
+    -1.5px  1.5px 0 #000,
+     1.5px  1.5px 0 #000,
+    -1.5px  0px   0 #000,
+     1.5px  0px   0 #000,
+     0px   -1.5px 0 #000,
+     0px    1.5px 0 #000,
+     0 2px 4px rgba(0, 0, 0, 0.8) !important;
+  font-family: system-ui, -apple-system, sans-serif !important;
+  font-weight: bold !important;
+}
+
+.subtitle-cue {
+  background: transparent !important;
+  color: #ffffff !important;
+  text-shadow: 
+    -1.5px -1.5px 0 #000,  
+     1.5px -1.5px 0 #000,
+    -1.5px  1.5px 0 #000,
+     1.5px  1.5px 0 #000,
+    -1.5px  0px   0 #000,
+     1.5px  0px   0 #000,
+     0px   -1.5px 0 #000,
+     0px    1.5px 0 #000,
+     0 2px 4px rgba(0, 0, 0, 0.8) !important;
+  font-family: system-ui, -apple-system, sans-serif !important;
+  font-weight: bold !important;
+}
+
+/* Premium Dynamic Single-Span Sliding Marquee */
+.marquee-container {
+  overflow: hidden;
+  white-space: nowrap;
+  width: 100%;
+  position: relative;
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 3%, #000 97%, transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0%, #000 3%, #000 97%, transparent 100%);
+}
+
+.marquee-text {
+  display: inline-block;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.marquee-scrollable {
+  animation: marquee-slide-back-and-forth 12s ease-in-out infinite;
+}
+
+@keyframes marquee-slide-back-and-forth {
+  0%, 15% {
+    transform: translateX(0);
+  }
+  45%, 60% {
+    transform: translateX(var(--scroll-distance, 0));
+  }
+  90%, 100% {
+    transform: translateX(0);
+  }
 }
