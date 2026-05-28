@@ -8,13 +8,8 @@ import {
 import { cn } from "@/lib/utils"
 import { Slider } from "@/components/ui/slider"
 import { Button } from "../ui/button"
+import { ParsedCue, parseVttText, parseVttToHtml } from "@/lib/vtt-parser"
 
-
-interface ParsedCue {
-  startTime: number;
-  endTime: number;
-  text: string;
-}
 
 interface VideoPlayerProps {
   videoId: string;
@@ -72,6 +67,27 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const skipTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
+  const [retryCount, setRetryCount] = useState(0)
+  const pendingSeekTimeRef = useRef(0)
+  const isRecoveringRef = useRef(false)
+  const wasPlayingRef = useRef(true)
+  const lastTimeRef = useRef(0)
+  const recoveryTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Track current time in a ref to survive closures
+  useEffect(() => {
+    lastTimeRef.current = currentTime
+  }, [currentTime])
+
+  // Cleanup recovery timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (recoveryTimeoutRef.current) {
+        clearTimeout(recoveryTimeoutRef.current)
+      }
+    }
+  }, [])
+
   useEffect(() => {
     const fetchVideo = async () => {
       try {
@@ -120,6 +136,43 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
 
     return () => clearInterval(interval)
   }, [isPlaying])
+
+  const handleVideoError = useCallback(() => {
+    const video = videoRef.current
+    if (!video) return
+
+    const err = video.error
+    console.error("Video player error code:", err ? err.code : "unknown", "message:", err ? err.message : "")
+
+    // Don't retry if aborted by the user
+    if (err && err.code === 1) {
+      return
+    }
+
+    if (retryCount < 5) {
+      setIsBuffering(true)
+      const savedTime = lastTimeRef.current
+      console.log(`Video stream connection lost. Attempting recovery in 2s (retry ${retryCount + 1}/5) at position ${savedTime}s...`)
+
+      pendingSeekTimeRef.current = savedTime
+      isRecoveringRef.current = true
+      wasPlayingRef.current = isPlaying
+      setRetryCount(prev => prev + 1)
+
+      if (recoveryTimeoutRef.current) {
+        clearTimeout(recoveryTimeoutRef.current)
+      }
+
+      recoveryTimeoutRef.current = setTimeout(() => {
+        const v = videoRef.current
+        if (!v) return
+        v.load()
+      }, 2000)
+    } else {
+      setError(`Stream connection lost. Please check your network or refresh the page. (Error code: ${err ? err.code : "unknown"})`)
+      setIsBuffering(false)
+    }
+  }, [retryCount, isPlaying])
 
   useEffect(() => {
     const video = videoRef.current
@@ -290,7 +343,7 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
   const toggleFullscreen = useCallback(() => {
     const container = videoContainerRef.current
     if (!container) return
-    
+
     if (!document.fullscreenElement) {
       container.requestFullscreen()
         .then(() => {
@@ -463,8 +516,35 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
           crossOrigin="anonymous"
           onClick={togglePlay}
           onDoubleClick={toggleFullscreen}
-          onLoadedData={() => setDuration(videoRef.current?.duration || 0)}
-          onError={() => setError("Failed to load video.")}
+          onLoadedData={() => {
+            const video = videoRef.current
+            if (!video) return
+            setDuration(video.duration || 0)
+
+            if (isRecoveringRef.current) {
+              isRecoveringRef.current = false
+              video.currentTime = pendingSeekTimeRef.current
+
+              if (wasPlayingRef.current) {
+                video.play().then(() => {
+                  setError(null)
+                  setRetryCount(0)
+                  setIsBuffering(false)
+                }).catch(playErr => {
+                  console.warn("Failed to autoplay after stream recovery:", playErr)
+                  setIsBuffering(false)
+                })
+              } else {
+                setError(null)
+                setRetryCount(0)
+                setIsBuffering(false)
+              }
+            } else {
+              setRetryCount(0)
+              setError(null)
+            }
+          }}
+          onError={handleVideoError}
           onPlay={() => {
             setIsPlaying(true)
             setSubtitlesVersion(v => v + 1)
@@ -480,9 +560,9 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
 
         {/* Custom Subtitles Overlay */}
         {subtitlesEnabled && activeCues.length > 0 && (
-          <div 
+          <div
             className={cn(
-              "absolute left-1/2 -translate-x-1/2 w-full max-w-[85%] flex flex-col items-center justify-end pointer-events-none z-10 gap-2 mb-2 select-none transition-all duration-200", 
+              "absolute left-1/2 -translate-x-1/2 w-full max-w-[85%] flex flex-col items-center justify-end pointer-events-none z-10 gap-2 mb-2 select-none transition-all duration-200",
               showControls ? "bottom-[18%]" : "bottom-[8%]"
             )}
           >
@@ -492,7 +572,7 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
               .map((cue, idx) => {
                 const text = cue.text || ""
                 const startTime = cue.startTime || 0
-                
+
                 // Font family configuration inline styling (system sans-serif for optimal performance and legibility)
                 const fontStyle = { fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" }
 
@@ -507,7 +587,7 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
                 return (
                   <div
                     key={`${startTime}-${idx}`}
-                    className="subtitle-cue text-center font-bold text-white tracking-wide select-none leading-normal transition-all [text-shadow:_-1.5px_-1.5px_0_#000,_1.5px_-1.5px_0_#000,_-1.5px_1.5px_0_#000,_1.5px_1.5px_0_#000,_0_1.5px_3px_rgba(0,0,0,0.8)]"
+                    className="subtitle-cue text-center font-bold text-white tracking-wide select-none leading-normal transition-all [text-shadow:-1.5px_-1.5px_0_#000,1.5px_-1.5px_0_#000,-1.5px_1.5px_0_#000,1.5px_1.5px_0_#000,0_1.5px_3px_rgba(0,0,0,0.8)]"
                     style={{
                       fontSize: baseSize,
                       ...fontStyle
@@ -522,7 +602,7 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
         {/* Controls overlay */}
         <div
           className={cn(
-            "absolute inset-0 flex flex-col justify-between bg-gradient-to-t from-black/80 via-transparent to-black/40 transition-opacity duration-300",
+            "absolute inset-0 flex flex-col justify-between bg-linear-to-t from-black/80 via-transparent to-black/40 transition-opacity duration-300",
             isFullscreen ? "rounded-none" : "rounded-lg",
             showControls ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
             (isLoading || error) && "hidden"
@@ -562,7 +642,7 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
               <div className="flex-1 relative flex items-center h-5">
                 {/* Custom Buffer Track background */}
                 <div className="absolute left-0 right-0 h-1.5 bg-zinc-700/60 rounded-full overflow-hidden pointer-events-none">
-                  <div 
+                  <div
                     className="h-full bg-zinc-400/40 transition-all duration-300"
                     style={{ width: `${duration > 0 ? (bufferedEnd / duration) * 100 : 0}%` }}
                   />
@@ -573,7 +653,7 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
                   max={duration || 100}
                   step={0.1}
                   onValueChange={handleSeek}
-                  className="relative z-10 flex-1 cursor-pointer h-full [&_[data-slot=slider-track]]:bg-transparent"
+                  className="relative z-10 flex-1 cursor-pointer h-full **:data-[slot=slider-track]:bg-transparent"
                 />
               </div>
               <span className="text-xs text-zinc-300 font-medium min-w-10 select-none">
@@ -638,16 +718,16 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
 
               <div className="flex items-center gap-2 relative">
                 {isDropdownOpen && (
-                  <div 
+                  <div
                     className="absolute bottom-12 right-0 w-56 bg-zinc-950/95 border border-zinc-800 text-zinc-200 rounded-xl shadow-2xl backdrop-blur-md z-30 p-3 select-none flex flex-col gap-2.5 animate-in fade-in slide-in-from-bottom-2 duration-200"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 px-1 py-0.5">
                       Subtitle Settings
                     </div>
-                    
+
                     <div className="h-px bg-zinc-800" />
-                    
+
                     {/* Subtitles Enabled Row */}
                     <button
                       type="button"
@@ -660,8 +740,8 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
                       <span>Enable Subtitles</span>
                       <span className={cn(
                         "text-[9px] px-1.5 py-0.5 rounded font-semibold",
-                        subtitlesEnabled 
-                          ? "bg-green-500/20 text-green-400 border border-green-500/30" 
+                        subtitlesEnabled
+                          ? "bg-green-500/20 text-green-400 border border-green-500/30"
                           : "bg-zinc-800 text-zinc-400"
                       )}>
                         {subtitlesEnabled ? "ON" : "OFF"}
@@ -686,8 +766,8 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
                             }}
                             className={cn(
                               "rounded-md py-1 text-[10px] font-medium transition-all text-center cursor-pointer uppercase",
-                              subSize === sz 
-                                ? "bg-zinc-700 text-white shadow-sm" 
+                              subSize === sz
+                                ? "bg-zinc-700 text-white shadow-sm"
                                 : "text-zinc-400 hover:text-white hover:bg-zinc-800/40"
                             )}
                           >
@@ -725,7 +805,7 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
                   className="h-10 w-10 sm:h-9 sm:w-9 hover:bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 active:ring-0 active:ring-offset-0 focus:outline-none"
                   onClick={toggleFullscreen}
                 >
-                  {isFullscreen ? <Minimize className="fill-white stroke-white"/> : <Maximize className="fill-white stroke-white" />}
+                  {isFullscreen ? <Minimize className="fill-white stroke-white" /> : <Maximize className="fill-white stroke-white" />}
                 </Button>
               </div>
             </div>
@@ -734,118 +814,4 @@ export default function VideoPlayer({ videoUrl }: VideoPlayerProps) {
       </div>
     </div>
   )
-}
-
-// Clean VTT subtitles cues to standard safe HTML
-function parseVttToHtml(vttText: string): string {
-  let html = vttText
-  
-  // Replace line breaks with <br>
-  html = html.replace(/\r?\n/g, '<br>')
-  
-  // Clean up timestamp tags if any (e.g. <00:00:01.000>)
-  // Replace with a space so adjacent words don't get glued together
-  html = html.replace(/<\d{2}:\d{2}:\d{2}\.\d{3}>/g, ' ')
-  html = html.replace(/<\d{2}:\d{2}\.\d{3}>/g, ' ')
-  
-  // Replace <i> and </i> tags
-  html = html.replace(/<i[^>]*>/gi, 'italic-start-placeholder')
-  html = html.replace(/<\/i>/gi, 'italic-end-placeholder')
-  
-  // Replace <b> and </b> tags
-  html = html.replace(/<b[^>]*>/gi, 'bold-start-placeholder')
-  html = html.replace(/<\/b>/gi, 'bold-end-placeholder')
-  
-  // Replace <u> and </u> tags
-  html = html.replace(/<u[^>]*>/gi, 'underline-start-placeholder')
-  html = html.replace(/<\/u>/gi, 'underline-end-placeholder')
-  
-  // Strip ASS override blocks like {\an8}, {\pos(100,100)}, etc. - replace with a space
-  html = html.replace(/{[^}]+}/g, ' ')
-  
-  // Strip all other HTML tags (to prevent any XSS or broken tags) - replace with a space
-  html = html.replace(/<[^>]+>/g, ' ')
-  
-  // Collapse multiple spaces into a single space
-  html = html.replace(/\s+/g, ' ')
-  
-  // Trim
-  html = html.trim()
-
-  // Replace standard spaces with non-breaking spaces so browser never collapses them
-  html = html.replace(/ /g, '&nbsp;')
-  
-  // Restore our safe tags (maintaining their standard class spaces safely)
-  html = html.replace(/italic-start-placeholder/g, '<em class="italic">')
-  html = html.replace(/italic-end-placeholder/g, '</em>')
-  html = html.replace(/bold-start-placeholder/g, '<strong class="font-bold">')
-  html = html.replace(/bold-end-placeholder/g, '</strong>')
-  html = html.replace(/underline-start-placeholder/g, '<u class="underline">')
-  html = html.replace(/underline-end-placeholder/g, '</u>')
-  
-  return html
-}
-
-function parseVttTimestamp(timestamp: string): number {
-  try {
-    const parts = timestamp.trim().split(":")
-    let hours = 0
-    let minutes = 0
-    let secondsWithMs = 0
-
-    if (parts.length === 3) {
-      hours = parseInt(parts[0], 10) || 0
-      minutes = parseInt(parts[1], 10) || 0
-      secondsWithMs = parseFloat(parts[2]) || 0
-    } else if (parts.length === 2) {
-      minutes = parseInt(parts[0], 10) || 0
-      secondsWithMs = parseFloat(parts[1]) || 0
-    } else {
-      secondsWithMs = parseFloat(parts[0]) || 0
-    }
-
-    return hours * 3600 + minutes * 60 + secondsWithMs
-  } catch (err) {
-    console.error("Error parsing timestamp:", timestamp, err)
-    return 0
-  }
-}
-
-function parseVttText(vttString: string): ParsedCue[] {
-  const lines = vttString.split(/\r?\n/)
-  const cues: ParsedCue[] = []
-  
-  let i = 0
-  while (i < lines.length) {
-    const line = lines[i].trim()
-    
-    // Check if this line is a timestamp line (contains -->)
-    if (line.includes("-->")) {
-      const parts = line.split("-->")
-      if (parts.length === 2) {
-        // Extract timestamps, ignoring any settings after space
-        const startPart = parts[0].trim().split(/\s+/)[0]
-        const endPart = parts[1].trim().split(/\s+/)[0]
-        
-        const startTime = parseVttTimestamp(startPart)
-        const endTime = parseVttTimestamp(endPart)
-        
-        // Read cue text lines until we hit an empty line or end of file
-        let text = ""
-        i++
-        while (i < lines.length && lines[i].trim() !== "") {
-          if (text) {
-            text += "\n"
-          }
-          text += lines[i]
-          i++
-        }
-        
-        cues.push({ startTime, endTime, text })
-      }
-    }
-    i++
-  }
-  
-  return cues
 }

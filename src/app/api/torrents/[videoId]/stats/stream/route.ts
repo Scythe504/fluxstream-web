@@ -1,4 +1,6 @@
 import { NextRequest } from "next/server";
+import http from "http";
+import https from "https";
 
 export async function GET(
   request: NextRequest,
@@ -10,27 +12,55 @@ export async function GET(
     const backendUrl = rawBackendUrl.replace(/\/$/, "");
     const targetUrl = `${backendUrl}/api/torrents/${videoId}/stats/stream`;
 
-    const response = await fetch(targetUrl, {
-      headers: {
-        "Accept": "text/event-stream",
-      },
-      cache: "no-store",
+    const client = targetUrl.startsWith("https") ? https : http;
+
+    const stream = new ReadableStream({
+      start(controller) {
+        const req = client.get(targetUrl, {
+          headers: {
+            "Accept": "text/event-stream",
+          }
+        }, (res) => {
+          if (res.statusCode && res.statusCode >= 400) {
+            controller.error(new Error(`Backend returned status ${res.statusCode}`));
+            return;
+          }
+
+          res.on("data", (chunk) => {
+            controller.enqueue(chunk);
+          });
+
+          res.on("end", () => {
+            controller.close();
+          });
+
+          res.on("error", (err) => {
+            controller.error(err);
+          });
+        });
+
+        req.on("error", (err) => {
+          controller.error(err);
+        });
+
+        // Close target request if the client disconnects
+        if (request.signal.aborted) {
+          req.destroy();
+        } else {
+          request.signal.addEventListener("abort", () => {
+            req.destroy();
+          });
+        }
+      }
     });
 
-    if (!response.ok) {
-      return new Response(`Backend returned status ${response.status}`, { status: response.status });
-    }
-
-    if (!response.body) {
-      return new Response("Backend stream body is empty", { status: 500 });
-    }
-
-    // Stream the body chunk-by-chunk using a stream-compatible Response
-    return new Response(response.body, {
+    return new Response(stream, {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache, no-transform",
         "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+        "Content-Encoding": "none",
       },
     });
   } catch (error) {

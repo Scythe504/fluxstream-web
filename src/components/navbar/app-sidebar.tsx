@@ -6,6 +6,7 @@ import {
   Library,
   PlusCircle,
   Video,
+  Compass,
 } from "lucide-react"
 import { FaGithub } from "react-icons/fa"
 import Link from "next/link"
@@ -44,6 +45,11 @@ const navItems = [
     title: "My Library",
     url: "/library",
     icon: Library,
+  },
+  {
+    title: "Providers",
+    url: "/providers",
+    icon: Compass,
   },
 ]
 
