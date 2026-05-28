@@ -37,7 +37,7 @@ export default function ProvidersIndexPage() {
       if (!silent) setLoading(true)
       else setRevalidating(true)
 
-      const res = await fetch("/api/providers/")
+      const res = await fetch("/api/providers")
       if (!res.ok) throw new Error("Failed to fetch verified providers")
       const data = await res.json()
       setProviders(data || [])
