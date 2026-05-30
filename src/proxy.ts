@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   if (request.nextUrl.pathname.startsWith("/api")) {
     // Exclude SSE stream route so that the custom Next.js route handler handles it (which supports streaming)
     if (request.nextUrl.pathname.endsWith("/stats/stream")) {
